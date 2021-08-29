@@ -3,7 +3,8 @@ import numpy as np
 
 # Importar as diferentes bases de dados
     
-    ## week 1 - code
+    ## week 1 - code (importação da base de dados)
+
 
 def get_ffme_returns():
     """
@@ -28,7 +29,8 @@ def get_hfi_returns():
     return hfi
                 
     
-    ## week 2 - code
+    ## week 2 - code (importação da base de dados)
+
 def get_ind_returns():
     """
     Load and format the Ken French 30 Industry Portfolios Value Weighted Monthly Returns
@@ -37,7 +39,40 @@ def get_ind_returns():
     ind.index = pd.to_datetime(ind.index, format="%Y%m").to_period('M')
     ind.columns = ind.columns.str.strip()
     return ind        
+    
+    
+    ## week 3 - code (importação da base de dados)
+    
+def get_ind_size():
+    """
+    """
+    ind = pd.read_csv(r"C:\Users\fiu126\Desktop\Coursera\Python\Introduction to Portfolio Construction and Analysis with Python\data\ind30_m_size.csv", header=0, index_col=0)
+    ind.index = pd.to_datetime(ind.index, format="%Y%m").to_period('M')
+    ind.columns = ind.columns.str.strip()
+    return ind        
 
+
+def get_ind_nfirms():
+    """
+    """
+    ind = pd.read_csv(r"C:\Users\fiu126\Desktop\Coursera\Python\Introduction to Portfolio Construction and Analysis with Python\data\ind30_m_nfirms.csv", header=0, index_col=0)
+    ind.index = pd.to_datetime(ind.index, format="%Y%m").to_period('M')
+    ind.columns = ind.columns.str.strip()
+    return ind     
+
+                         
+def get_total_market_index_returns():
+    """
+    Load the 30 industry portfolio data and derive the returns of a capweighted total market index
+    """
+    ind_nfirms = get_ind_nfirms()
+    ind_size = get_ind_size()
+    ind_return = get_ind_returns()
+    ind_mktcap = ind_nfirms * ind_size
+    total_mktcap = ind_mktcap.sum(axis=1)
+    ind_capweight = ind_mktcap.divide(total_mktcap, axis="rows")
+    total_market_return = (ind_capweight * ind_return).sum(axis="columns")
+    return total_market_return
 
 # Medidas de risco e retorno
 
@@ -90,7 +125,7 @@ def drawdown(return_series: pd.Series):
     return pd.DataFrame({
         "Wealth":wealth_index,
         "Peaks":previous_peaks,
-        "Drawdowns":drawdowns
+        "Drawdown":drawdowns
     })
     
 
@@ -190,7 +225,7 @@ def cvar_historic(r, level=5):
         raise TypeError("Expected r to be a Series or DataFrame")
 
 
-# week 2 - 2 assets
+ ## week 2 - code  - 2 assets
 
 def portfolio_return(weights, returns):
     '''
@@ -220,7 +255,7 @@ def plot_ef2(n_points, er, cov, style=".-"):
     return ef.plot.line(x="Volatility", y="Returns", style=style)
 
 
-# week 2  - N-Asset Efficient Frontier
+ ## week 2 - code   N-Asset Efficient Frontier
 
 from scipy.optimize import minimize
 def minimize_vol(target_return,er, cov):
@@ -341,4 +376,286 @@ def msr(riskfree_rate,er, cov):
                       )
     return results.x
 
-# fim week 2 - code
+ ## fim week 2 - code 
+
+ ## week 3 - code 
+
+                         
+def run_cppi(risky_r, safe_r=None, m=3, start=1000, floor=0.8, riskfree_rate=0.03, drawdown=None):
+    """
+    Run a backtest of the CPPI strategy, given a set of returns for the risky asset
+    Returns a dictionary containing: Asset Value History, Risk Budget History, Risky Weight History
+    """
+    # set up the CPPI parameters
+    dates = risky_r.index
+    n_steps = len(dates)
+    account_value = start
+    floor_value = start*floor
+    peak = account_value #defino qual o peak inicial - 1000=account value
+    if isinstance(risky_r, pd.Series): 
+        risky_r = pd.DataFrame(risky_r, columns=["R"])
+
+    if safe_r is None:
+        safe_r = pd.DataFrame().reindex_like(risky_r)
+        safe_r.values[:] = riskfree_rate/12 # fast way to set all values to a number
+    # set up some DataFrames for saving intermediate values
+    account_history = pd.DataFrame().reindex_like(risky_r)
+    risky_w_history = pd.DataFrame().reindex_like(risky_r)
+    cushion_history = pd.DataFrame().reindex_like(risky_r)
+    floorval_history = pd.DataFrame().reindex_like(risky_r)
+    peak_history = pd.DataFrame().reindex_like(risky_r)
+
+    for step in range(n_steps):
+        
+        if drawdown is not None:
+            peak = np.maximum(peak, account_value) #máximo entre o pico anterior e o account_value
+            floor_value = peak*(1-drawdown)
+            
+        cushion = (account_value - floor_value)/account_value
+        risky_w = m*cushion
+        risky_w = np.minimum(risky_w, 1)
+        risky_w = np.maximum(risky_w, 0)
+        safe_w = 1-risky_w
+        risky_alloc = account_value*risky_w
+        safe_alloc = account_value*safe_w
+        # recompute the new account value at the end of this step
+        account_value = risky_alloc*(1+risky_r.iloc[step]) + safe_alloc*(1+safe_r.iloc[step])
+        # save the histories for analysis and plotting
+        cushion_history.iloc[step] = cushion
+        risky_w_history.iloc[step] = risky_w
+        account_history.iloc[step] = account_value
+        floorval_history.iloc[step] = floor_value
+        peak_history.iloc[step] = peak
+        
+    risky_wealth = start*(1+risky_r).cumprod()
+    
+    backtest_result = {
+        "Wealth": account_history,
+        "Risky Wealth": risky_wealth, 
+        "Risk Budget": cushion_history,
+        "Risky Allocation": risky_w_history,
+        "m": m,
+        "start": start,
+        "floor": floor,
+        "risky_r":risky_r,
+        "safe_r": safe_r,
+        "drawdown": drawdown,
+        "peak": peak_history,
+        "floor": floorval_history
+    }
+    return backtest_result
+
+
+
+def summary_stats(r, riskfree_rate=0.03):
+    """
+    Return a DataFrame that contains aggregated summary stats for the returns in the columns of r
+    """
+    ann_r = r.aggregate(annualize_rets, periods_per_year=12)
+    ann_vol = r.aggregate(annualize_vol, periods_per_year=12)
+    ann_sr = r.aggregate(sharpe_ratio, riskfree_rate=riskfree_rate, periods_per_year=12)
+    dd = r.aggregate(lambda r: drawdown(r).Drawdown.min())
+    skew = r.aggregate(skewness)
+    kurt = r.aggregate(kurtosis)
+    cf_var5 = r.aggregate(var_gaussian, modified=True)
+    hist_cvar5 = r.aggregate(cvar_historic)
+    return pd.DataFrame({
+        "Annualized Return": ann_r,
+        "Annualized Vol": ann_vol,
+        "Skewness": skew,
+        "Kurtosis": kurt,
+        "Cornish-Fisher VaR (5%)": cf_var5,
+        "Historic CVaR (5%)": hist_cvar5,
+        "Sharpe Ratio": ann_sr,
+        "Max Drawdown": dd
+    })
+
+def gbm(n_years = 10, n_scenarios=1000, mu=0.07, sigma=0.15, steps_per_year=12, s_0=100.0, prices=True):
+    """
+    Evolution of Geometric Brownian Motion trajectories, such as for Stock Prices through Monte Carlo
+    :param n_years:  The number of years to generate data for
+    :param n_paths: The number of scenarios/trajectories
+    :param mu: Annualized Drift, e.g. Market Return
+    :param sigma: Annualized Volatility
+    :param steps_per_year: granularity of the simulation
+    :param s_0: initial value
+    :return: a numpy array of n_paths columns and n_years*steps_per_year rows
+    """
+    # Derive per-step Model Parameters from User Specifications
+    dt = 1/steps_per_year
+    n_steps = int(n_years*steps_per_year) + 1
+    # the standard way ...
+    # rets_plus_1 = np.random.normal(loc=mu*dt+1, scale=sigma*np.sqrt(dt), size=(n_steps, n_scenarios))
+    # without discretization error ...
+    rets_plus_1 = np.random.normal(loc=(1+mu)**dt, scale=(sigma*np.sqrt(dt)), size=(n_steps, n_scenarios))
+    rets_plus_1[0] = 1
+    ret_val = s_0*pd.DataFrame(rets_plus_1).cumprod() if prices else rets_plus_1-1
+    return ret_val
+
+    ## week 4.1 - code 
+    
+def discount(t, r):
+    """
+    Compute the price of a pure discount bond that pays a dollar at time period t
+    and r is the per-period interest rate
+    returns a |t| x |r| Series or DataFrame
+    r can be a float, Series or DataFrame
+    returns a DataFrame indexed by t
+    """
+    discounts = pd.DataFrame([(r+1)**-i for i in t])
+    discounts.index = t
+    return discounts
+
+def pv(flows, r):
+    """
+    Compute the present value of a sequence of cash flows given by the time (as an index) and amounts
+    r can be a scalar, or a Series or DataFrame with the number of rows matching the num of rows in flows
+    """
+    dates = flows.index
+    discounts = discount(dates, r)
+    return discounts.multiply(flows, axis='rows').sum()
+
+
+def funding_ratio(assets, liabilities, r):
+    """
+    Computes the funding ratio of a series of liabilities, based on an interest rate and current value of assets
+    """
+    return pv(assets, r)/pv(liabilities, r)
+
+
+def show_funding_ratio(assets,r):
+    fr=funding_ratio(assets,liabilities,r)
+    print(f'{fr*100:.2f}')
+    
+    
+  ## week 4.2 - code 
+   
+    
+def inst_to_ann(r):
+    """
+    Converts short rate to an anuulaized rate
+    """
+    return np.exp(r)-1
+
+def ann_to_inst(r):
+    """
+    Convert annualized to a short rate
+    """
+    return np.log(1+r)
+
+
+import math
+def cir(n_years = 10, n_scenarios=1, a=0.05, b=0.03, sigma=0.05, steps_per_year=12, r_0=None):
+    """
+    Generate random interest rate evolution over time using the CIR model
+    b and r_0 are assumed to be the annualized rates, not the short rate
+    and the returned values are the annualized rates as well
+    """
+    if r_0 is None: r_0 = b 
+    r_0 = ann_to_inst(r_0)
+    dt = 1/steps_per_year
+    num_steps = int(n_years*steps_per_year) + 1 # because n_years might be a float
+    
+    shock = np.random.normal(0, scale=np.sqrt(dt), size=(num_steps, n_scenarios))
+    rates = np.empty_like(shock)
+    rates[0] = r_0
+
+    ## For Price Generation
+    h = math.sqrt(a**2 + 2*sigma**2)
+    prices = np.empty_like(shock)
+    ####
+
+    def price(ttm, r):
+        _A = ((2*h*math.exp((h+a)*ttm/2))/(2*h+(h+a)*(math.exp(h*ttm)-1)))**(2*a*b/sigma**2)
+        _B = (2*(math.exp(h*ttm)-1))/(2*h + (h+a)*(math.exp(h*ttm)-1))
+        _P = _A*np.exp(-_B*r)
+        return _P
+    prices[0] = price(n_years, r_0)
+    ####
+    
+    for step in range(1, num_steps):
+        r_t = rates[step-1]
+        d_r_t = a*(b-r_t)*dt + sigma*np.sqrt(r_t)*shock[step]
+        rates[step] = abs(r_t + d_r_t)
+        # generate prices at time t as well ...
+        prices[step] = price(n_years-step*dt, rates[step])
+
+    rates = pd.DataFrame(data=inst_to_ann(rates), index=range(num_steps))
+    ### for prices
+    prices = pd.DataFrame(data=prices, index=range(num_steps))
+    ###
+    return rates, prices
+
+
+  ## week 4.3 - code 
+
+def bond_cash_flows(maturity, principal=100, coupon_rate=0.03, coupons_per_year=12):
+    """
+    Returns the series of cash flows generated by a bond,
+    indexed by the payment/coupon number
+    """
+    n_coupons = round(maturity*coupons_per_year)
+    coupon_amt = principal*coupon_rate/coupons_per_year
+    coupon_times = np.arange(1, n_coupons+1)
+    cash_flows = pd.Series(data=coupon_amt, index=coupon_times)
+    cash_flows.iloc[-1] += principal # add the principal to the last payment
+    return cash_flows
+
+def bond_price(maturity, principal=100, coupon_rate=0.03, coupons_per_year=12, discount_rate=0.03):
+    """
+    Computes the price of a bond that pays regular coupons until maturity
+    at which time the principal and the final coupon is returned
+    This is not designed to be efficient, rather,
+    it is to illustrate the underlying principle behind bond pricing!
+    If discount_rate is a DataFrame, then this is assumed to be the rate on each coupon date
+    and the bond value is computed over time.
+    i.e. The index of the discount_rate DataFrame is assumed to be the coupon number
+    """
+    if isinstance(discount_rate, pd.DataFrame):
+        pricing_dates = discount_rate.index
+        prices = pd.DataFrame(index=pricing_dates, columns=discount_rate.columns)
+        for t in pricing_dates:
+            prices.loc[t] = bond_price(maturity-t/coupons_per_year, principal, coupon_rate, coupons_per_year,
+                                      discount_rate.loc[t])
+        return prices
+    else: # base case ... single time period
+        if maturity <= 0: return principal+principal*coupon_rate/coupons_per_year
+        cash_flows = bond_cash_flows(maturity, principal, coupon_rate, coupons_per_year)
+        return pv(cash_flows, discount_rate/coupons_per_year)
+    
+def macaulay_duration(flows, discount_rate):
+    """
+    Computes the Macaulay Duration of a sequence of cash flows, given a per-period discount rate
+    """
+    discounted_flows = discount(flows.index, discount_rate)*flows
+    weights = discounted_flows/discounted_flows.sum()
+    return np.average(flows.index, weights=weights)
+
+def match_durations(cf_t, cf_s, cf_l, discount_rate):
+    """
+    Returns the weight W in cf_s that, along with (1-W) in cf_l will have an effective
+    duration that matches cf_t
+    """
+    d_t = macaulay_duration(cf_t, discount_rate)
+    d_s = macaulay_duration(cf_s, discount_rate)
+    d_l = macaulay_duration(cf_l, discount_rate)
+    return (d_l - d_t)/(d_l - d_s)
+
+
+  ## week 4.4 - code 
+
+def bond_total_return(monthly_prices, principal, coupon_rate, coupons_per_year):
+    """
+    Computes the total return of a Bond based on monthly bond prices and coupon payments
+    Assumes that dividends (coupons) are paid out at the end of the period (e.g. end of 3 months for quarterly div)
+    and that dividends are reinvested in the bond
+    """
+    coupons = pd.DataFrame(data = 0, index=monthly_prices.index, columns=monthly_prices.columns)
+    t_max = monthly_prices.index.max()
+    pay_date = np.linspace(12/coupons_per_year, t_max, int(coupons_per_year*t_max/12), dtype=int)
+    coupons.iloc[pay_date] = principal*coupon_rate/coupons_per_year
+    total_returns = (monthly_prices + coupons)/monthly_prices.shift()-1
+    return total_returns.dropna()
+
+
+     ## fim week 4 - code 
